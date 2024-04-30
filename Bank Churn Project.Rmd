@@ -1,0 +1,650 @@
+---
+title: "Bank Churn Project"
+output: html_document
+date: "2024-04-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(car)
+library(ggplot2)
+library(randomForest)
+library(e1071)
+library(caret)
+library(ltm)
+library(corrplot)
+```
+
+
+
+```{r}
+df.churn <- read.csv("./Churn_Modelling.csv")
+
+colSums(is.na(df.churn))
+#df.churn <- na.omit(df.churn)
+df.churn <- dplyr::select(df.churn, -RowNumber, -CustomerId, -Surname)
+str(df.churn)
+
+df.churn$Geography = as.factor(df.churn$Geography)
+df.churn$Gender = as.factor(df.churn$Gender)
+df.churn$HasCrCard = as.factor(df.churn$HasCrCard)
+df.churn$IsActiveMember = as.factor(df.churn$IsActiveMember)
+df.churn$Exited = as.factor(df.churn$Exited)
+
+df.churn$Geography = as.factor(df.churn$Geography)
+str(df.churn)
+```
+
+
+```{r}
+##### MULTICOLLINEARITY #####
+# both numeric and factor columns
+numeric_data <- df.churn[, sapply(df.churn, is.numeric)]
+factor_data <- df.churn[, sapply(df.churn, is.factor)]
+
+# dummy variables
+dummy_vars <- model.matrix(~ . - 1, data = factor_data)
+dummy_vars <- as.data.frame(dummy_vars)
+#dummy_vars <- dplyr::select(dummy_vars, -zipconvert2No) #zipconvert2No not necessary because binary just like the rest
+
+combined_data <- cbind(numeric_data, dummy_vars)
+
+# Correlation matrix
+cor_matrix <- cor(combined_data, use = "pairwise.complete.obs") 
+
+corrplot(cor_matrix, method = "color",
+         type = "upper",  # Only upper triangle
+         order = "hclust",  # Clustering of similar items
+         tl.col = "black",
+         tl.srt = 45,  # Rotation
+         addCoef.col = "black",
+         diag = FALSE)
+```
+
+
+```{r}
+class_counts <- table(df.churn$Exited)
+class_counts
+
+set.seed(11)
+bal.churn <- df.churn %>%
+  group_by(Exited) %>%
+  sample_n(min(table(df.churn$Exited)), replace = FALSE) %>%
+  ungroup()
+
+index = sample(1:nrow(bal.churn), 0.8*nrow(bal.churn))
+churn.train = bal.churn[index,]
+churn.test = bal.churn[-index,]
+```
+
+
+```{r}
+ggplot(bal.churn, aes(x = Exited, y = Balance)) +
+  geom_boxplot() +
+  labs(x = "Exited", y = "Account Balance", title = "Boxplot of Account Balance by Exited")
+
+ggplot(bal.churn, aes(x = Exited, y = Age)) +
+  geom_boxplot() +
+  labs(x = "Exited", y = "Age", title = "Boxplot of Age by Exited")
+
+ggplot(bal.churn, aes(x = Exited, y = CreditScore)) +
+  geom_boxplot() +
+  labs(x = "Exited", y = "Credit Score", title = "Boxplot of Credit Score by Exited")
+
+ggplot(bal.churn, aes(x = Exited, y = Tenure)) +
+  geom_boxplot() +
+  labs(x = "Exited", y = "Tenure", title = "Boxplot of Tenure by Exited")
+
+ggplot(bal.churn, aes(x = Exited, y = EstimatedSalary)) +
+  geom_boxplot() +
+  labs(x = "Exited", y = "Estimated Salary", title = "Boxplot of Estimated Salary by Exited")
+
+ggplot(bal.churn, aes(x = Exited, y = NumOfProducts)) +
+  geom_boxplot() +
+  labs(x = "Exited", y = "Number of Products", title = "Boxplot of Number of Products by Exited")
+
+biserial_correlation[1] <- biserial.cor(bal.churn$Balance, bal.churn$Exited, level=2)
+cat("Point-biserial correlation is", biserial_correlation[1], "\n")
+
+
+# Calculate the degrees of freedom (number of observations - 2)
+df <- length(bal.churn$Exited) - 2
+
+# Calculate the t-statistic for the correlation
+t_value <- biserial_correlation[1] * sqrt(df / (1 - biserial_correlation[1]^2))
+
+# Get the p-value from the t-statistic
+p_value <- 2 * pt(-abs(t_value), df)
+
+# Print the results
+print(paste("P-value:", p_value))
+
+
+
+biserial_correlation[2] <- biserial.cor(bal.churn$Age, bal.churn$Exited, level=2)
+cat("Point-biserial correlation is", biserial_correlation[2], "\n")
+
+# Calculate the degrees of freedom (number of observations - 2)
+df <- length(bal.churn$Exited) - 2
+
+# Calculate the t-statistic for the correlation
+t_value <- biserial_correlation[2] * sqrt(df / (1 - biserial_correlation[2]^2))
+
+# Get the p-value from the t-statistic
+p_value <- 2 * pt(-abs(t_value), df)
+
+# Print the results
+print(paste("P-value:", p_value))
+
+
+
+biserial_correlation[3] <- biserial.cor(bal.churn$CreditScore, bal.churn$Exited, level=2)
+cat("Point-biserial correlation is", biserial_correlation[3], "\n")
+# Calculate the degrees of freedom (number of observations - 2)
+df <- length(bal.churn$Exited) - 2
+
+# Calculate the t-statistic for the correlation
+t_value <- biserial_correlation[3] * sqrt(df / (1 - biserial_correlation[3]^2))
+
+# Get the p-value from the t-statistic
+p_value <- 2 * pt(-abs(t_value), df)
+
+# Print the results
+print(paste("P-value:", p_value))
+
+
+
+biserial_correlation[4] <- biserial.cor(bal.churn$Tenure, bal.churn$Exited, level=2)
+cat("Point-biserial correlation is", biserial_correlation[4], "\n")
+
+# Calculate the degrees of freedom (number of observations - 2)
+df <- length(bal.churn$Exited) - 2
+
+# Calculate the t-statistic for the correlation
+t_value <- biserial_correlation[4] * sqrt(df / (1 - biserial_correlation[4]^2))
+
+# Get the p-value from the t-statistic
+p_value <- 2 * pt(-abs(t_value), df)
+
+# Print the results
+print(paste("P-value:", p_value))
+biserial_correlation[5] <- biserial.cor(bal.churn$EstimatedSalary, bal.churn$Exited, level=2)
+cat("Point-biserial correlation is", biserial_correlation[5])
+# Calculate the degrees of freedom (number of observations - 2)
+df <- length(bal.churn$Exited) - 2
+
+# Calculate the t-statistic for the correlation
+t_value <- biserial_correlation[5] * sqrt(df / (1 - biserial_correlation[5]^2))
+
+# Get the p-value from the t-statistic
+p_value <- 2 * pt(-abs(t_value), df)
+
+# Print the results
+print(paste("P-value:", p_value))
+
+
+
+```
+
+
+```{r}
+levene_test_result <- leveneTest(bal.churn$CreditScore, bal.churn$Gender, center = mean)
+print(levene_test_result)
+
+levene_test_result <- leveneTest(bal.churn$Tenure, bal.churn$Exited, center = mean)
+print(levene_test_result)
+
+levene_test_result <- leveneTest(bal.churn$Age, bal.churn$Exited, center = mean)
+print(levene_test_result)
+```
+
+```{r}
+count_gender_1 <- sum(bal.churn$Gender == "Male")
+count_gender_0 <- sum(bal.churn$Gender == "Female")
+
+# Print the counts
+print(paste("Count for Gender = 1:", count_gender_1))
+print(paste("Count for Gender = 0:", count_gender_0))
+
+# Subset the data based on Gender
+credit_score_male = bal.churn$CreditScore[bal.churn$Gender == "Male"]
+credit_score_female = bal.churn$CreditScore[bal.churn$Gender == "Female"]
+
+# Perform the t-test
+t_test_result = t.test(credit_score_male, credit_score_female, var.equal = TRUE)
+
+
+tenure_exited = bal.churn$Tenure[bal.churn$Exited == 1]
+tenure_nonexited = bal.churn$Tenure[bal.churn$Exited == 0]
+# Print the results
+print(t_test_result)
+
+t_test_result = t.test(tenure_exited, tenure_nonexited, var.equal = TRUE)
+
+# Print the results
+print(t_test_result)
+
+
+
+age_exited = bal.churn$Age[bal.churn$Exited == 1]
+age_nonexited = bal.churn$Age[bal.churn$Exited == 0]
+t_test_result = t.test(age_exited, age_nonexited, var.equal = FALSE)
+
+# Print the results
+print(t_test_result)
+
+
+```
+
+
+```{r}
+churner <- bal.churn[bal.churn$Exited == 1, ]
+
+# Mean, Median, and Standard Deviation for continuous variables
+age_stats <- c(mean(churner$Age), median(churner$Age), sd(churner$Age))
+balance_stats <- c(mean(churner$Balance), median(churner$Balance), sd(churner$Balance))
+tenure_stats <- c(mean(churner$Tenure), median(churner$Tenure), sd(churner$Tenure))
+CreditScore <- c(mean(churner$CreditScore), median(churner$CreditScore), sd(churner$CreditScore))
+Salary <- c(mean(churner$EstimatedSalary), median(churner$EstimatedSalary), sd(churner$EstimatedSalary))
+Tenure <- c(mean(churner$Tenure), median(churner$Tenure), sd(churner$Tenure))
+Products <- c(mean(churner$NumOfProducts), median(churner$NumOfProducts), sd(churner$NumOfProducts))
+
+# Proportions for categorical variables
+gender_prop <- prop.table(table(churner$Gender))
+geography_prop <- prop.table(table(churner$Geography))
+has_cc_prop <- prop.table(table(churner$HasCrCard))
+is_active_prop <- prop.table(table(churner$IsActiveMember))
+geo_prop <- prop.table(table(churner$Geography))
+
+# Display the descriptive statistics
+cat("Descriptive Statistics for Customers who Exited the Bank:\n")
+cat("---------------------------------------------------------\n")
+cat("Age: Mean =", age_stats[1], ", Median =", age_stats[2], ", SD =", age_stats[3], "\n")
+cat("Balance: Mean =", balance_stats[1], ", Median =", balance_stats[2], ", SD =", balance_stats[3], "\n")
+cat("Tenure: Mean =", tenure_stats[1], ", Median =", tenure_stats[2], ", SD =", tenure_stats[3], "\n")
+cat("\n")
+cat("Gender Proportion:\n")
+print(gender_prop)
+cat("\n")
+cat("Geography Proportion:\n")
+print(geography_prop)
+cat("\n")
+cat("Has Credit Card Proportion:\n")
+print(has_cc_prop)
+cat("\n")
+cat("Is Active Member Proportion:\n")
+print(is_active_prop)
+cat("\n")
+cat("Credit Score: Mean =", CreditScore[1], ", Median =", CreditScore[2], ", SD =", CreditScore[3], "\n")
+cat("\n")
+cat("Salary: Mean =", Salary[1], ", Median =", Salary[2], ", SD =", Salary[3], "\n")
+cat("Geography Proportion:\n")
+print(geo_prop)
+cat("\n")
+cat("Tenure: Mean =", Tenure[1], ", Median =", Tenure[2], ", SD =", Tenure[3], "\n")
+cat("\n")
+cat("Num of Products: Mean =", Products[1], ", Median =", Products[2], ", SD =", Products[3], "\n")
+cat("\n")
+```
+
+```{r}
+log <- glm(Exited ~., family = "binomial", data = churn.train)
+summary(log)
+logfitted <- predict(log, newdata=churn.test, type='response')
+logfitted <- ifelse(logfitted > 0.5, 1, 0)
+
+# Calculate accuracy
+accuracy <- mean(logfitted == churn.test$Exited)
+print(paste("Accuracy:", accuracy))
+
+# Confusion Matrix
+confusionMatrix <- table(Predicted = logfitted, Actual = churn.test$Exited)
+print(
+  confusionMatrix)
+
+```
+
+```{r}
+# Extract the summary information
+model_summary <- summary(log)
+
+p_values_df <- data.frame(
+  Term = rownames(model_summary$coefficients),
+  PValue = model_summary$coefficients[, "Pr(>|z|)"]
+)
+##p_values_df <- p_values_df[p_values_df$Term != "(Intercept)", ]
+
+# Since ggplot's geom_text needs numeric positions, we also create an index column
+p_values_df$Index <- seq_along(p_values_df$Term)
+
+ggplot(p_values_df, aes(x = PValue, y = reorder(Term, PValue))) +
+  geom_point() + # Use points to represent the p-values
+  geom_vline(xintercept = 0.05, linetype = "dashed", color = "red", size = 1) + # Line for significance threshold
+  theme_minimal() + # Use a minimal theme
+  labs(x = "P-Value", y = "Variables") + # Labels for the axes
+  ggtitle("P-Values of Model Coefficients") + # Title of the plot
+  theme(
+    text = element_text(size = 14),  # Increase font size for all text elements
+    plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+    axis.title = element_text(size = 14),  # Increase font size for axis titles
+    axis.text = element_text(size = 12)  # Increase font size for axis text
+  ) 
+ 
+```
+
+
+```{r}
+# Use step function for backward selection
+backward.log <- step(log, direction = "backward")
+
+# Display the summary of the reduced model
+summary(backward.log)
+
+# Make predictions and evaluate the model as before
+predictions <- predict(backward.log, newdata=churn.test, type='response')
+predictions <- ifelse(predictions > 0.5, 1, 0)
+
+accuracy <- mean(predictions == churn.test$Exited)
+print(paste("Accuracy of reduced model:", accuracy))
+confusionMatrix <- table(Predicted = predictions, Actual = churn.test$Exited)
+print(confusionMatrix)
+```
+
+
+```{r}
+set.seed(11)
+rf_model <- randomForest(Exited ~ ., data = churn.train, ntree = 100)
+
+rf_predictions <- predict(rf_model, newdata = churn.test)
+
+# Calculate accuracy
+accuracy <- mean(rf_predictions == churn.test$Exited)
+print(paste("Accuracy:", accuracy))
+
+# You can also look at the confusion matrix
+confusionMatrix2 <- table(Predicted = rf_predictions, Actual = churn.test$Exited)
+confusionMatrix2
+
+var_importance = importance(rf_model)
+
+# Create a data frame from the variable importance for ggplot2
+importance_df <- data.frame(
+  Variable = rownames(var_importance),
+  Importance = var_importance[, "MeanDecreaseGini"]
+)
+
+# Sort the importance in descending order for plotting
+importance_df <- importance_df[order(-importance_df$Importance),]
+
+# Use ggplot2 to create a bar plot
+ggplot(importance_df, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_bar(fill = "lightgreen", color = "black", stat = "identity") +
+  coord_flip() +  # Flip coordinates to make it horizontal
+  theme_minimal() +
+  xlab("Variable") +
+  ylab("Importance") +
+  ggtitle("Variable Importance from Random Forest Model") +
+  theme(
+   text = element_text(size = 14),  # Increase font size for all text elements
+   plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+   axis.title = element_text(size = 14),  # Increase font size for axis titles
+   axis.text = element_text(size = 12)  # Increase font size for axis text
+)
+
+fitControl <- trainControl(method = "cv",
+                           number = 10,
+                           search = "grid")
+
+# Define the tuning grid for the 'mtry' parameter
+tuningGrid <- expand.grid(.mtry = c(2, round(sqrt(ncol(churn.train) - 1)), round(ncol(churn.train)/3)))
+
+# Train the model using the train function from the caret package
+set.seed(11) # for reproducibility
+tuned_rf_model <- train(
+  Exited ~ ., 
+  data = churn.train, 
+  method = "rf",
+  metric = "Accuracy",
+  tuneGrid = tuningGrid,
+  trControl = fitControl,
+  ntree = 150  # Setting the number of trees to a fixed value
+)
+
+# Print the best model from the tuning process
+print(tuned_rf_model$bestTune)
+
+# You can compare the tuned model's accuracy with the original model
+rf_predictions_tuned <- predict(tuned_rf_model, newdata = churn.test)
+accuracy_tuned <- mean(rf_predictions_tuned == churn.test$Exited)
+print(paste("Tuned Model Accuracy:", accuracy_tuned))
+
+confusionMatrix3 <- table(Predicted = rf_predictions_tuned, Actual = churn.test$Exited)
+confusionMatrix3
+```
+
+
+```{r}
+svm_model <- svm(Exited ~ ., data = churn.train, kernel = "radial", cost = 1, scale = TRUE)
+svmfitted <- predict(svm_model, newdata = churn.test)
+
+train_control <- trainControl(
+  method = "cv",         # Cross-validation
+  number = 10            # Number of folds
+)
+
+accuracy <- mean(svmfitted == churn.test$Exited)
+print(paste("Accuracy:", accuracy))
+
+# Confusion Matrix
+confusionMatrix <- table(Predicted = svmfitted, Actual = churn.test$Exited)
+print(confusionMatrix)
+
+# Define the training control
+train_control <- trainControl(
+  method = "cv",         # Cross-validation
+  number = 10            # Number of folds
+)
+
+# Set up the tuning grid with appropriate parameter names
+tuning_grid <- expand.grid(
+  sigma = 10^seq(-2, 2, length.out = 5),   # Sigma
+  C = 10^seq(-2, 2, length.out = 5)        # Cost
+)
+
+# Train the model
+svm_tuned_model <- train(
+  Exited ~ ., 
+  data = churn.train,
+  method = "svmRadial",
+  trControl = train_control,
+  tuneGrid = tuning_grid,
+  preProcess = "scale", # Important to scale for SVM
+  metric = "Accuracy"   # Optimization metric
+)
+
+print(svm_tuned_model)
+
+svmfitted2 <- predict(svm_tuned_model, newdata = churn.test)
+confusionMatrix2 <- table(Predicted = svmfitted2, Actual = churn.test$Exited)
+print(confusionMatrix2)
+```
+```{r}
+accuracy2 <- mean(svmfitted2 == churn.test$Exited)
+print(paste("Accuracy:", accuracy2))
+```
+
+```{r}
+caret::confusionMatrix(svm_tuned_model)
+```
+
+```{r}
+bar_plot <- ggplot(df.churn, aes(x = Exited)) +
+            geom_bar(fill = "lightgreen", color = "black") +
+            geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5, size = 4, color = "black") + 
+            labs(title = "Distribution of Exited", x = "Exited", y = "Frequency") +
+            theme_minimal() +
+            theme(
+              text = element_text(size = 14),  # Increase font size for all text elements
+              plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+              axis.title = element_text(size = 14),  # Increase font size for axis titles
+              axis.text = element_text(size = 12)  # Increase font size for axis text
+            )
+print(bar_plot)
+
+bar_plot <- ggplot(bal.churn, aes(x = Exited)) +
+            geom_bar(fill = "lightgreen", color = "black") +
+            geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5, size = 4, color = "black") + 
+            labs(title = "Distribution of Exited (Cleaned and Balanced)", x = "Exited", y = "Frequency") +
+            theme_minimal() +
+            theme(
+              text = element_text(size = 14),  # Increase font size for all text elements
+              plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+              axis.title = element_text(size = 14),  # Increase font size for axis titles
+              axis.text = element_text(size = 12)  # Increase font size for axis text
+            )
+print(bar_plot)
+
+
+
+
+
+p <- ggplot(df.churn, aes_string(x = "Age")) +
+      geom_histogram(binwidth = 5, fill = "lightgreen", color = "black") +
+      labs(title = paste("Distribution of Age"), x = "Age", y = "Frequency") +
+      theme_minimal() +
+      theme(
+        text = element_text(size = 14),  # Increase font size for all text elements
+        plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+        axis.title = element_text(size = 14),  # Increase font size for axis titles
+        axis.text = element_text(size = 12)  # Increase font size for axis text
+      )
+print(p)
+    
+f <- ggplot(bal.churn, aes_string(x = "Age")) +
+      geom_histogram(binwidth = 5, fill = "lightgreen", color = "black") +
+      labs(title = paste("Distribution of Age (Cleaned and Balanced)"), x = "Age", y = "Frequency") +
+      theme_minimal() +
+      theme(
+        text = element_text(size = 14),  # Increase font size for all text elements
+        plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+        axis.title = element_text(size = 14),  # Increase font size for axis titles
+        axis.text = element_text(size = 12)  # Increase font size for axis text
+      )
+    print(f)
+    
+p <- ggplot(df.churn, aes_string(x = "CreditScore")) +
+      geom_histogram(binwidth = 10, fill = "lightgreen", color = "black") +
+      labs(title = paste("Distribution of CreditScore"), x = "CreditScore", y = "Frequency") +
+      theme_minimal() +
+      theme(
+        text = element_text(size = 14),  # Increase font size for all text elements
+        plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+        axis.title = element_text(size = 14),  # Increase font size for axis titles
+        axis.text = element_text(size = 12)  # Increase font size for axis text
+      )
+    print(p)
+    
+f <- ggplot(bal.churn, aes_string(x = "CreditScore")) +
+      geom_histogram(binwidth = 10, fill = "lightgreen", color = "black") +
+      labs(title = paste("Distribution of CreditScore (Cleaned and Balanced)"), x = "CreditScore", y = "Frequency") +
+      theme_minimal() +
+      theme(
+        text = element_text(size = 14),  # Increase font size for all text elements
+        plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+        axis.title = element_text(size = 14),  # Increase font size for axis titles
+        axis.text = element_text(size = 12)  # Increase font size for axis text
+      )
+    print(f)
+    
+    
+f <- ggplot(bal.churn, aes_string(x = "Age")) +
+      geom_histogram(binwidth = 5, fill = "lightgreen", color = "black") +
+      labs(title = paste("Distribution of Age (Cleaned and Balanced)"), x = "Age", y = "Frequency") +
+      theme_minimal() +
+      theme(
+        text = element_text(size = 14),  # Increase font size for all text elements
+        plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+        axis.title = element_text(size = 14),  # Increase font size for axis titles
+        axis.text = element_text(size = 12)  # Increase font size for axis text
+      )
+    print(f)
+    
+f <- ggplot(bal.churn, aes_string(x = "Balance")) +
+      geom_histogram(binwidth = 5000, fill = "lightgreen", color = "black") +
+      labs(title = paste("Distribution of Balance (Cleaned and Balanced)"), x = "Balance", y = "Frequency") +
+      theme_minimal() +
+      theme(
+        text = element_text(size = 14),  # Increase font size for all text elements
+        plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+        axis.title = element_text(size = 14),  # Increase font size for axis titles
+        axis.text = element_text(size = 12)  # Increase font size for axis text
+      )
+    print(f)
+    
+    
+bar_plot2 <- ggplot(bal.churn, aes(x = Tenure)) +
+            geom_bar(fill = "lightgreen", color = "black") +
+            geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5, size = 4, color = "black") + 
+            labs(title = "Distribution of Tenure (Cleaned and Balanced)", x = "Tenure", y = "Frequency") +
+            theme_minimal() +
+            theme(
+              text = element_text(size = 14),  # Increase font size for all text elements
+              plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+              axis.title = element_text(size = 14),  # Increase font size for axis titles
+              axis.text = element_text(size = 12)  # Increase font size for axis text
+            )
+print(bar_plot2)
+    
+```
+```{r}
+p <- ggplot(df.churn, aes_string(x = "NumOfProducts")) +
+      geom_histogram(binwidth = 1, fill = "lightgreen", color = "black") +
+      labs(title = paste("Distribution of NumOfProducts"), x = "NumOfProducts", y = "Frequency") +
+      theme_minimal() +
+      theme(
+        text = element_text(size = 14),  # Increase font size for all text elements
+        plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+        axis.title = element_text(size = 14),  # Increase font size for axis titles
+        axis.text = element_text(size = 12)  # Increase font size for axis text
+      )
+    print(p)
+    
+f <- ggplot(bal.churn, aes_string(x = "NumOfProducts")) +
+      geom_histogram(binwidth = 1, fill = "lightgreen", color = "black") +
+      labs(title = paste("Distribution of NumOfProducts (Cleaned and Balanced)"), x = "NumOfProducts", y = "Frequency") +
+      theme_minimal() +
+      theme(
+        text = element_text(size = 14),  # Increase font size for all text elements
+        plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+        axis.title = element_text(size = 14),  # Increase font size for axis titles
+        axis.text = element_text(size = 12)  # Increase font size for axis text
+      )
+    print(f)
+    
+    
+p <- ggplot(df.churn, aes_string(x = "EstimatedSalary")) +
+      geom_histogram(binwidth = 5000, fill = "lightgreen", color = "black") +
+      labs(title = paste("Distribution of EstimatedSalary"), x = "EstimatedSalary", y = "Frequency") +
+      theme_minimal() +
+      theme(
+        text = element_text(size = 14),  # Increase font size for all text elements
+        plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+        axis.title = element_text(size = 14),  # Increase font size for axis titles
+        axis.text = element_text(size = 12)  # Increase font size for axis text
+      )
+    print(p)
+    
+f <- ggplot(bal.churn, aes_string(x = "EstimatedSalary")) +
+      geom_histogram(binwidth = 5000, fill = "lightgreen", color = "black") +
+      labs(title = paste("Distribution of EstimatedSalary (Cleaned and Balanced)"), x = "EstimatedSalary", y = "Frequency") +
+      theme_minimal() +
+      theme(
+        text = element_text(size = 14),  # Increase font size for all text elements
+        plot.title = element_text(size = 16, face = "bold"),  # Increase font size and make title bold
+        axis.title = element_text(size = 14),  # Increase font size for axis titles
+        axis.text = element_text(size = 12)  # Increase font size for axis text
+      )
+    print(f)
+```
+
